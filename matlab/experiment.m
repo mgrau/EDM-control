@@ -4,7 +4,9 @@ classdef experiment < handle
         port
         tcp
         commands
+        controls
         com
+        doc
         dio64
         dac
         dac_tasks
@@ -17,6 +19,8 @@ classdef experiment < handle
             try
             obj.open();
             obj.get_commands();
+            obj.get_documentation();
+            obj.get_controls();
             catch
                 fprintf('Error: no labview interface running on %s:%d',obj.host,obj.port);
             end
@@ -81,6 +85,42 @@ classdef experiment < handle
             commands = obj.commands;
         end
         
+        function get_documentation(obj)
+            fopen(obj.tcp);
+            obj.send('documentation')
+            dim = fread(obj.tcp,1,'uint32');
+            obj.doc = struct;
+            for i=1:dim
+                var = obj.commands{i};
+                var(var==':')='';        
+                x = fread(obj.tcp,1,'uint32');
+                obj.doc.(matlab.lang.makeValidName(var))  = char(fread(obj.tcp,x,'char'))';
+            end
+            fclose(obj.tcp);
+        end
+        
+        function controls = get_controls(obj)
+            fopen(obj.tcp);
+            obj.send('controls')
+            dim = fread(obj.tcp,1,'uint32');
+            obj.controls = cell(dim,1);
+            for i=1:dim
+                x = fread(obj.tcp,1,'uint32');
+                obj.controls{i} = fread(obj.tcp,x,'char');
+                obj.controls{i} = char(obj.controls{i}');
+            end
+            fclose(obj.tcp);
+            obj.controls = sort(obj.controls);
+            controls = obj.controls;
+        end        
+        
+        function x = sync(obj)
+            fopen(obj.tcp);
+            obj.send('sync')
+            x = fread(obj.tcp,1,'uint8');
+            fclose(obj.tcp);
+        end
+        
         function read_dio64(obj)
             obj.dio64 = obj.recv_object('dio64:read');
             obj.dio64 = struct2table(obj.dio64.DIO64);
@@ -134,7 +174,33 @@ classdef experiment < handle
                     obj.scope.data.(strcat('y',num2str(i))) = obj.scope.WaveformGraph{i}.Y;
                 end
             end
-        end         
+        end     
+        
+        function x = read_control(obj,control)
+            if ismember(control,obj.controls)
+                fopen(obj.tcp);
+                obj.send('read');
+                obj.send(control);
+                dim = fread(obj.tcp,1,'uint32');
+                header = [];
+                while dim
+                    header = [header; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
+                    dim  = dim - min(dim,obj.tcp.InputBufferSize);
+                end
+                dim = fread(obj.tcp,1,'uint32');
+                data = [];
+                while dim
+                    data = [data; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
+                    dim  = dim - min(dim,obj.tcp.InputBufferSize);
+                end            
+                fclose(obj.tcp);
+                header = uint8(header');
+                data = uint8(data');
+                x = parse_binary(header,data);
+                x = struct2cell(x);
+                x = x{1};
+            end
+        end        
         
         function x = recv_object(obj,command)
             fopen(obj.tcp);

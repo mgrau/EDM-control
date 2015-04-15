@@ -1,4 +1,4 @@
-function output = parse_binary(str,ptr)
+function output = parse_binary(header_str,data_str)
     % PARSE_BINARY(file,offset)     
     %   Opens a Labview binary file (with Grau approved
     %   header). Stores the binary data in a self describing struct.
@@ -34,13 +34,13 @@ function output = parse_binary(str,ptr)
 
     %% Read in Header from ubinary.vi
     % first read in a 1d array of strings containing the variable names
-    [ptr,names] = read_array(str,ptr,[1 48],{});
+    [ptr,names] = read_array(header_str,1,[1 48],{});
 
     % now read in a 1d array of integers that contain type data
-    [ptr,type_array] = read_array(str,ptr,[1 5],{});
+    [~,type_array] = read_array(header_str,ptr,[1 5],{});
 
     %% Read in actual data
-    [~,output,~,~] = read_cluster(str,ptr,type_array,names,inf);
+    [~,output,~,~] = read_cluster(data_str,1,type_array,names,inf);
 end
 
 function type_string=convert_type(type_enum)
@@ -99,24 +99,24 @@ function [ptr,data] = read_data(str,ptr,current_type,n)
             data = logical(str(ptr:ptr+n-1));
             ptr = ptr+n;
         otherwise
-            data = typecast(str(ptr:ptr+n*type_size(current_type)-1),convert_type(current_type));
+            data = swapbytes(typecast(str(ptr:ptr+n*type_size(current_type)-1),convert_type(current_type)));
             ptr = ptr+n*type_size(current_type);
     end
 end
 
 function [ptr,data] = read_string(str,ptr)
-    dim = typecast(str(ptr:ptr+4-1),'uint32');
+    dim = swapbytes(typecast(str(ptr:ptr+4-1),'uint32'));
     ptr = ptr + 4;
     data = char(str(ptr:ptr+dim-1));
     ptr = ptr + dim;
 end
 
 function [ptr,data] = read_waveform(str,ptr)
-    data.timestamp1 = typecast(str(ptr:ptr+8-1),'uint64');
+    data.timestamp1 = swapbytes(typecast(str(ptr:ptr+8-1),'uint64'));
     ptr = ptr + 8;
-    data.timestamp2 = int64(uint32(typecast(str(ptr:ptr+8-1),'uint64'))-2082844800);
+    data.timestamp2 = int64(uint32(swapbytes(typecast(str(ptr:ptr+8-1),'uint64')))-2082844800);
     ptr = ptr + 8;
-    data.dt = typecast(str(ptr:ptr+8-1),'double');
+    data.dt = swapbytes(typecast(str(ptr:ptr+8-1),'double'));
     ptr = ptr + 8;
     [ptr,data.Y] = read_array(str,ptr,[1 10],{});
     data.attributes = str(ptr:ptr+29-1);
@@ -128,7 +128,7 @@ function [ptr,data,type_array,names] = read_array(str,ptr,type_array,names)
     N = double(type_array(1));
     type_array = type_array(2:end);
     % Now read in the size of each dimension of the array.
-    dim = double(typecast(str(ptr:ptr+4*N-1),'uint32'));
+    dim = double(swapbytes(typecast(str(ptr:ptr+4*N-1),'uint32')));
     ptr = ptr + 4*N;
 
     % Pop the type of the array and the variable name off of the queue.
