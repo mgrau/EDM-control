@@ -39,12 +39,6 @@ classdef experiment < handle
             fwrite(obj.tcp,msg);
         end
         
-        function test(obj,msg)
-            fopen(obj.tcp);
-            obj.send(msg);
-            fclose(obj.tcp);
-        end
-        
         function command(obj,state,varargin)
             for i=1:length(varargin)
                 if isnumeric(varargin{i})
@@ -112,69 +106,7 @@ classdef experiment < handle
             fclose(obj.tcp);
             obj.controls = sort(obj.controls);
             controls = obj.controls;
-        end        
-        
-        function x = sync(obj)
-            fopen(obj.tcp);
-            obj.send('sync')
-            x = fread(obj.tcp,1,'uint8');
-            fclose(obj.tcp);
-        end
-        
-        function read_dio64(obj)
-            obj.dio64 = obj.recv_object('dio64:read');
-            obj.dio64 = struct2table(obj.dio64.DIO64);
-            for i=1:size(obj.dio64,1)
-                obj.dio64.Chops{i} = obj.dio64.Chops{i}';
-            end
         end 
-        
-        function write_dio64(obj)
-            fopen(obj.tcp);
-            obj.send('dio64:write')
-            obj.send_table(obj.dio64);
-            fclose(obj.tcp);
-        end
-        
-        function read_dac(obj)
-            obj.dac = obj.recv_object('dac:read');
-            obj.dac = struct2table(obj.dac.DAC);
-            for i=1:size(obj.dac,1)
-                obj.dac.Chops{i} = obj.dac.Chops{i}';
-            end
-        end 
-        
-        function write_dac(obj)
-            fopen(obj.tcp);
-            obj.send('dac:write')
-            obj.send_table(obj.dac);
-            fclose(obj.tcp);
-        end
-        
-        function read_dac_tasks(obj)
-            obj.dac_tasks = obj.recv_object('dac_tasks:read');
-%             obj.dac_tasks = struct2table(obj.dac_tasks.DACTasks);
-
-        end 
-        
-        function write_dac_tasks(obj)
-            fopen(obj.tcp);
-            obj.send('dac_tasks:write')
-            obj.send_table(obj.dac_tasks);
-            fclose(obj.tcp);
-        end
-        
-        function read_scope(obj)
-            obj.scope = obj.recv_object('scope:read');
-            obj.scope.data = table;
-            if ~isempty(obj.scope.WaveformGraph)
-                dt = obj.scope.WaveformGraph{1}.dt;
-                obj.scope.data.x = (0:length(obj.scope.WaveformGraph{1}.Y)-1)'*dt;
-                for i=1:length(obj.scope.WaveformGraph)
-                    obj.scope.data.(strcat('y',num2str(i))) = obj.scope.WaveformGraph{i}.Y;
-                end
-            end
-        end     
         
         function x = read_control(obj,control)
             if ismember(control,obj.controls)
@@ -200,22 +132,66 @@ classdef experiment < handle
                 x = struct2cell(x);
                 x = x{1};
             end
-        end        
+        end  
         
-        function x = recv_object(obj,command)
+        function x = sync(obj)
             fopen(obj.tcp);
-            obj.send(command)
-            dim = fread(obj.tcp,1,'uint32');
-            x = [];
-            while dim
-                x = [x; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
-                dim  = dim - min(dim,obj.tcp.InputBufferSize);
-            end
+            obj.send('sync')
+            x = fread(obj.tcp,1,'uint8');
             fclose(obj.tcp);
-            x = uint8(x');
-            x = parse_binary(x,1);
         end
         
+        function read_dio64(obj)
+            obj.dio64 = struct2table(obj.read_control('dio64'));
+            for i=1:size(obj.dio64,1)
+                obj.dio64.Chops{i} = obj.dio64.Chops{i}';
+            end
+        end 
+        
+        function write_dio64(obj)
+            fopen(obj.tcp);
+            obj.send('write:dio64')
+            obj.send_table(obj.dio64);
+            fclose(obj.tcp);
+        end
+        
+        function read_dac(obj)
+            obj.dac = struct2table(obj.read_control('dac'));
+            for i=1:size(obj.dac,1)
+                obj.dac.Chops{i} = obj.dac.Chops{i}';
+            end
+        end 
+        
+        function write_dac(obj)
+            fopen(obj.tcp);
+            obj.send('write:dac')
+            obj.send_table(obj.dac);
+            fclose(obj.tcp);
+        end
+        
+        function read_dac_tasks(obj)
+            obj.dac_tasks = struct2table(obj.read_control('dac:tasks'));
+        end 
+        
+        function write_dac_tasks(obj)
+            fopen(obj.tcp);
+            obj.send('write:dac:tasks new')
+            obj.send_table(obj.dac_tasks);
+            fclose(obj.tcp);
+        end
+        
+        function read_scope(obj)
+            waveform = obj.read_control('scope');
+            obj.scope = table;
+            if ~isempty(waveform)
+                dt = waveform{1}.dt;
+                obj.scope.x = (0:length(waveform{1}.Y)-1)'*dt;
+                for i=1:numel(waveform)
+                    obj.scope.(strcat('y',num2str(i))) = waveform{i}.Y;
+                end
+            end
+        end           
+             
         function send_table(obj,s)
             fwrite(obj.tcp,size(s,1),'uint32');
             for i=1:size(s,1)
