@@ -136,35 +136,37 @@ function [ptr,data,type_array,names] = read_array(str,ptr,type_array,names)
     type_array = type_array(2:end);
     names = names(2:end);
     
-    if length(dim)==1
-        dim = [dim 1];
-    end
-    
-    
-    if current_type==80
-        n = type_array(1);
-        type_array = type_array(2:end);
-        if prod(dim)>1
-            [ptr,data(1:prod(dim)),~,~] = read_cluster(str,ptr,type_array,names,n);
-            if prod(dim)>2
-                for i=2:(prod(dim)-1)
-                    [ptr,data(i),~,~] = read_cluster(str,ptr,type_array,names,n);
+    if dim>0
+        if length(dim)==1
+            dim = [dim 1];
+        end
+
+        if current_type==80
+            n = type_array(1);
+            type_array = type_array(2:end);
+            if prod(dim)>1
+                [ptr,data(1:prod(dim)),~,~] = read_cluster(str,ptr,type_array,names,n);
+                if prod(dim)>2
+                    for i=2:(prod(dim)-1)
+                        [ptr,data(i),~,~] = read_cluster(str,ptr,type_array,names,n);
+                    end
                 end
+                [ptr,data(prod(dim)),type_array,names] = read_cluster(str,ptr,type_array,names,n);
+            else
+                [ptr,data,type_array,names] = read_cluster(str,ptr,type_array,names,n);
             end
-            [ptr,data(prod(dim)),type_array,names] = read_cluster(str,ptr,type_array,names,n);
+        elseif and(current_type>=0,current_type<=33)
+                [ptr,data] = read_data(str,ptr,current_type,prod(dim));
         else
-            [ptr,data,type_array,names] = read_cluster(str,ptr,type_array,names,n);
+            data = transpose(cell(double(dim)));
+            for i=1:prod(dim)
+                [ptr,data{i}] = read_data(str,ptr,current_type,1);
+            end
         end
-    elseif and(current_type>0,current_type<=33)
-            [ptr,data] = read_data(str,ptr,current_type,prod(dim));
+        data = transpose(data);
     else
-        data = transpose(cell(double(dim)));
-        for i=1:prod(dim)
-            [ptr,data{i}] = read_data(str,ptr,current_type,1);
-        end
+        data = [];
     end
-    
-    data = transpose(data);
 end
 
 function [ptr,data,type_array,names] = read_cluster(str,ptr,type_array,names,n)
