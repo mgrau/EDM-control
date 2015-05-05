@@ -53,7 +53,7 @@ function type_string=convert_type(type_enum)
             type_string = 'int32';
         case 4
             type_string = 'int64';
-        case 5
+        case {5,0}
             type_string = 'uint8';
         case 6
             type_string = 'uint16';
