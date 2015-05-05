@@ -10,6 +10,7 @@ classdef experiment < handle
         dio64
         dac
         dac_tasks
+        dac_kick
         scope
     end
     methods
@@ -175,8 +176,19 @@ classdef experiment < handle
         
         function write_dac_tasks(obj)
             fopen(obj.tcp);
-            obj.send('write:dac:tasks new')
+            obj.send('write:dac:tasks')
             obj.send_table(obj.dac_tasks);
+            fclose(obj.tcp);
+        end
+        
+        function read_dac_kick(obj)
+            obj.dac_kick = struct2table(obj.read_control('dac:kick'));
+        end 
+        
+        function write_dac_kick(obj)
+            fopen(obj.tcp);
+            obj.send('write:dac:kick')
+            obj.send_table(obj.dac_kick);
             fclose(obj.tcp);
         end
         
@@ -204,6 +216,18 @@ classdef experiment < handle
                             buffer = [buffer uint8(temp{:})];
                         elseif ischar(temp{:})
                             buffer = [buffer uint8(temp{:})];
+                        elseif isstruct(temp{:})
+                            temp_struct = struct2cell(temp{:});
+                            for k=1:size(temp_struct,2)
+                                for l=1:size(temp_struct,1)
+                                    if length(temp_struct{l,k})>1
+                                        buffer = [buffer typecast(uint32(length(temp_struct{l,k})),'uint8')];
+                                        buffer = [buffer typecast(temp_struct{l,k}','uint8')];
+                                    else
+                                        buffer = [buffer typecast(temp_struct{l,k},'uint8')];
+                                    end
+                                end
+                            end
                         else
                             buffer = [buffer typecast(temp{:},'uint8')];
                         end
