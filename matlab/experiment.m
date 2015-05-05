@@ -32,7 +32,9 @@ classdef experiment < handle
         end
         
         function open(obj)
-            obj.tcp = tcpip(obj.host,obj.port);  
+            obj.tcp = tcpip(obj.host,obj.port);
+            obj.tcp.InputBufferSize = 2^16;
+            obj.tcp.OutputBufferSize = 2^16;
         end
         
         function send(obj,msg)
