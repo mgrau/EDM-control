@@ -1,4 +1,4 @@
-function output = parse_binary(header_str,data_str)
+function [output,type_array] = parse_binary(header_str,data_str)
     % PARSE_BINARY(file,offset)     
     %   Opens a Labview binary file (with Grau approved
     %   header). Stores the binary data in a self describing struct.
@@ -40,7 +40,11 @@ function output = parse_binary(header_str,data_str)
     [~,type_array] = read_array(header_str,ptr,[1 5],{});
 
     %% Read in actual data
-    [~,output,~,~] = read_cluster(data_str,1,type_array,names,inf);
+    if exist('data_str','var')
+        [~,output,~,~] = read_cluster(data_str,1,type_array,names,inf);
+    else
+        output = -1;
+    end
 end
 
 function type_string=convert_type(type_enum)
@@ -163,6 +167,9 @@ function [ptr,data,type_array,names] = read_array(str,ptr,type_array,names)
                 [ptr,data{i}] = read_data(str,ptr,current_type,1);
             end
         end
+        if length(dim)>1
+            data = reshape(data,fliplr(dim));
+        end
         data = transpose(data);
     else
         data = [];
@@ -201,13 +208,16 @@ function [ptr,data,type_array,names] = read_cluster(str,ptr,type_array,names,n)
                 [ptr,x] = read_data(str,ptr,current_type,1);
         end
 
-        data.(genvar(current_name)) = x;
+        data.(genvar(current_name,fields(data))) = x;
 
         n = n-1;
     end
 end
 
-function varname = genvar(candidate)
+function varname = genvar(candidate,vetos)
+if ~exist('vetos','var')
+    vetos = {};
+end
 varname = candidate;
 if ~isvarname(varname) % Short-circuit if varname already legal
     % Insert x if the first column is non-letter.
@@ -228,6 +238,15 @@ if ~isvarname(varname) % Short-circuit if varname already legal
     % Prepend keyword with 'x' and camel case.
     if iskeyword(varname)
         varname = ['x' upper(varname(1)) varname(2:end)];
+    end
+    
+    % if this variable name is used already, change it
+    if ismember(varname,vetos)
+        i = 1;
+        while ismember(strcat(varname,num2str(i)),vetos)
+            i = i + 1;
+        end
+        varname = strcat(varname,num2str(i));
     end
 
     % Truncate varname to NAMLENGTHMAX
