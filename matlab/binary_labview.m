@@ -14,7 +14,7 @@ function [stream,header] = binary_labview(data,header)
                 array_stream = [array_stream stream];
             end
             stream = array_stream;            
-            if length(data) == 0
+            if isempty(data)
                 header = header(2:end);
             else
                 header = new_header;
@@ -53,6 +53,13 @@ function [stream,header] = binary_labview(data,header)
                     stream = typecast(swapbytes(single(data)),'uint8');
                 else
                     fprintf('error, matlab has single but type should be %d.\n',header(1));
+                end
+            case 'uint64'
+                if header(1) == 8
+                    header = header(2:end);
+                    stream = typecast(swapbytes(uint64(data)),'uint8');
+                else
+                    fprintf('error, matlab has uint64 but type should be %d.\n',header(1));
                 end                
             case 'uint32'
                 if header(1) == 7
@@ -67,6 +74,20 @@ function [stream,header] = binary_labview(data,header)
                     stream = typecast(swapbytes(uint16(data)),'uint8');
                 else
                     fprintf('error, matlab has uint16 but type should be %d.\n',header(1));
+                end
+            case 'uint8'
+                if header(1) == 5
+                    header = header(2:end);
+                    stream = typecast(swapbytes(uint8(data)),'uint8');
+                else
+                    fprintf('error, matlab has uint8 but type should be %d.\n',header(1));
+                end
+            case 'int64'
+                if header(1) == 4
+                    header = header(2:end);
+                    stream = typecast(swapbytes(int64(data)),'uint8');
+                else
+                    fprintf('error, matlab has int64 but type should be %d.\n',header(1));
                 end                
             case 'int32'
                 if header(1) == 3
@@ -74,6 +95,20 @@ function [stream,header] = binary_labview(data,header)
                     stream = typecast(swapbytes(int32(data)),'uint8');
                 else
                     fprintf('error, matlab has int32 but type should be %d.\n',header(1));
+                end
+            case 'int16'
+                if header(1) == 2
+                    header = header(2:end);
+                    stream = typecast(swapbytes(int16(data)),'uint8');
+                else
+                    fprintf('error, matlab has int16 but type should be %d.\n',header(1));
+                end
+            case 'int8'
+                if header(1) == 1
+                    header = header(2:end);
+                    stream = typecast(swapbytes(int8(data)),'uint8');
+                else
+                    fprintf('error, matlab has int8 but type should be %d.\n',header(1));
                 end                
             case 'logical'
                 if header(1) == 33
@@ -83,7 +118,7 @@ function [stream,header] = binary_labview(data,header)
                     fprintf('error, matlab has logical but type should be %d.\n',header(1));
                 end                
             case 'char'
-                if ismember(header(1),[48 55 112])
+                if ismember(header(1),[48 55 84 112])
                     header = header(2:end);
                     stream = typecast(swapbytes(uint32(length(data))),'uint8');
                     stream = [stream uint8(data(:)')];                

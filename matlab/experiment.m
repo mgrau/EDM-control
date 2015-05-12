@@ -1,3 +1,4 @@
+% experiment class to abstract communicating with labview
 classdef experiment < handle
     properties
         host
@@ -6,7 +7,8 @@ classdef experiment < handle
         commands
         controls
         com
-        doc
+        read
+        write
         dio64
         dac
         dac_tasks
@@ -37,22 +39,28 @@ classdef experiment < handle
         
         function open(obj)
             obj.tcp = tcpip(obj.host,obj.port);
-            obj.tcp.InputBufferSize = 2^16;
-            obj.tcp.OutputBufferSize = 2^16;
+            % Set the input and output buffers to be pretty large. This
+            % reduces communication overhead and doesn't seem to use up too
+            % much memory.
+            obj.tcp.InputBufferSize = 2^24;
+            obj.tcp.OutputBufferSize = 2^24;
         end
         
         function send(obj,msg)
+            % appends a 4 byte message length before sending messages, so
+            % labview knows how much data to expect.
             fwrite(obj.tcp,length(msg),'uint32');
             fwrite(obj.tcp,msg);
         end
         
-        function command(obj,state,varargin)
-            for i=1:length(varargin)
-                if isnumeric(varargin{i})
-                    varargin{i} = num2str(varargin{i});
-                end
-            end
+        function out = command(obj,state,varargin)
+            out = 0;
             if ismember(state,obj.commands)
+                for i=1:length(varargin)
+                    if isnumeric(varargin{i})
+                        varargin{i} = num2str(varargin{i});
+                    end
+                end                
                 if isempty(varargin)
                     str = state;
                 elseif length(varargin)==1
@@ -63,6 +71,7 @@ classdef experiment < handle
                 fopen(obj.tcp);
                 obj.send(str);
                 fclose(obj.tcp);
+                out = 1;
             end
         end
             
@@ -81,7 +90,8 @@ classdef experiment < handle
             for i=1:length(obj.commands)
                 var = obj.commands{i};
                 var(var==':')='';
-                 obj.com.(matlab.lang.makeValidName(var)) = @(varargin) command(obj,obj.commands{i},varargin{:});
+                obj.com.(matlab.lang.makeValidName(var)) = mfunction(@(varargin) command(obj,obj.commands{i},varargin{:}));
+                obj.com.(matlab.lang.makeValidName(var)).doc = ['Labview function <strong>' var '</strong>\n\n'];
             end
             commands = obj.commands;
         end
@@ -90,13 +100,12 @@ classdef experiment < handle
             fopen(obj.tcp);
             obj.send('documentation')
             dim = fread(obj.tcp,1,'uint32');
-            obj.doc = struct;
             for i=1:dim
                 var = obj.commands{i};
                 var(var==':')='';        
                 x = fread(obj.tcp,1,'uint32');
                 if x>0
-                    obj.doc.(matlab.lang.makeValidName(var))  = char(fread(obj.tcp,x,'char'))';
+                    append_doc(obj.com.(matlab.lang.makeValidName(var)),char(fread(obj.tcp,x,'uint8')'));
                 end
             end
             fclose(obj.tcp);
@@ -115,6 +124,10 @@ classdef experiment < handle
             fclose(obj.tcp);
             obj.controls = sort(obj.controls);
             controls = obj.controls;
+            for i=1:numel(controls)
+                obj.read.(matlab.lang.makeValidName(controls{i})) = mfunction(@(varargin) read_control(obj,controls{i}));
+                obj.write.(matlab.lang.makeValidName(controls{i})) = mfunction(@(new_value) write_control(obj,controls{i},new_value));                
+            end
         end
         
         function header = read_type(obj,control)
@@ -135,11 +148,12 @@ classdef experiment < handle
                 obj.send('read');
                 obj.send(control);                
                 dim = fread(obj.tcp,1,'uint32');
-                data = [];
-                while dim
-                    data = [data; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
-                    dim  = dim - min(dim,obj.tcp.InputBufferSize);
-                end            
+%                 data = [];
+%                 while dim
+%                     data = [data; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
+%                     dim  = dim - min(dim,obj.tcp.InputBufferSize);
+%                 end
+                data = fread(obj.tcp,dim,'uint8');
                 fclose(obj.tcp);
                 data = uint8(data');
                 [x,type_header] = parse_binary(header,data);
@@ -148,7 +162,8 @@ classdef experiment < handle
             end
         end  
         
-        function write_control(obj,control,data)
+        function out = write_control(obj,control,data)
+            out = 0;
             if ismember(control,obj.controls)
                 header = obj.read_type(control);
                 [~,header] = parse_binary(header);
@@ -158,6 +173,7 @@ classdef experiment < handle
                 obj.send(control);
                 obj.send(data_str);
                 fclose(obj.tcp);
+                out = 1;
             end
         end
         
@@ -187,10 +203,7 @@ classdef experiment < handle
         end 
         
         function write_dac(obj)
-            fopen(obj.tcp);
-            obj.send('write:dac')
-            obj.send_table(obj.dac);
-            fclose(obj.tcp);
+            obj.write_control('dac',table2struct(obj.dac));
         end
         
         function read_dac_tasks(obj)
@@ -198,10 +211,7 @@ classdef experiment < handle
         end 
         
         function write_dac_tasks(obj)
-            fopen(obj.tcp);
-            obj.send('write:dac:tasks')
-            obj.send_table(obj.dac_tasks);
-            fclose(obj.tcp);
+            obj.write_control('dac:tasks',table2struct(obj.dac_tasks));
         end
         
         function read_dac_kick(obj)
@@ -209,10 +219,7 @@ classdef experiment < handle
         end 
         
         function write_dac_kick(obj)
-            fopen(obj.tcp);
-            obj.send('write:dac:kick')
-            obj.send_table(obj.dac_kick);
-            fclose(obj.tcp);
+            obj.write_control('dac:kick',table2struct(obj.dac_kick));
         end
         
         function read_scope(obj)
@@ -227,41 +234,5 @@ classdef experiment < handle
             end
         end           
              
-        function send_table(obj,s)
-            fwrite(obj.tcp,size(s,1),'uint32');
-            for i=1:size(s,1)
-                buffer = [];
-                for j=1:size(s,2)
-                    if iscell(s{i,j})
-                        temp = s{i,j};
-                        buffer = [buffer typecast(uint32(length(temp{:})),'uint8')];
-                        if islogical(temp{:})
-                            buffer = [buffer uint8(temp{:})];
-                        elseif ischar(temp{:})
-                            buffer = [buffer uint8(temp{:})];
-                        elseif isstruct(temp{:})
-                            temp_struct = struct2cell(temp{:});
-                            for k=1:size(temp_struct,2)
-                                for l=1:size(temp_struct,1)
-                                    if length(temp_struct{l,k})>1
-                                        buffer = [buffer typecast(uint32(length(temp_struct{l,k})),'uint8')];
-                                        buffer = [buffer typecast(temp_struct{l,k}','uint8')];
-                                    else
-                                        buffer = [buffer typecast(temp_struct{l,k},'uint8')];
-                                    end
-                                end
-                            end
-                        else
-                            buffer = [buffer typecast(temp{:},'uint8')];
-                        end
-                    elseif isnumeric(s{i,j})
-                        buffer = [buffer typecast(s{i,j},'uint8')];
-                    elseif islogical(s{i,j})
-                        buffer = [buffer uint8(s{i,j})];
-                    end
-                end
-                obj.send(buffer);
-            end
-        end
     end
 end
