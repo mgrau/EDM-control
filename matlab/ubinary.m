@@ -27,6 +27,7 @@ function data = ubinary(filename)
         for i=1:num_elements
             name_len = swapbytes(typecast(str(ptr:ptr+3),'uint32'));
             ptr = ptr + 4;
+            name = char(str(ptr:ptr+name_len-1));
             ptr = ptr + name_len;            
             header_len = swapbytes(typecast(str(ptr:ptr+3),'uint32'));
             ptr = ptr + 4;
@@ -36,10 +37,17 @@ function data = ubinary(filename)
             ptr = ptr + 4;
             data_str = str(ptr:ptr+data_len-1);
             ptr = ptr + data_len;
-            x = parse_binary(header_str,data_str);
-            field_names = fields(x);
-            for j=1:numel(field_names)
-                data.(field_names{j}) = x.(field_names{j});
+            try
+                if strcmp(name,'DIO64 Labels');
+                    name
+                end
+                x = parse_binary(header_str,data_str);
+                field_names = fields(x);
+                for j=1:numel(field_names)
+                    data.(field_names{j}) = x.(field_names{j});
+                end
+            catch
+                fprintf('Couldnt load control %s\n.',name); 
             end
         end
     end

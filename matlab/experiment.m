@@ -1,51 +1,20 @@
 % experiment class to abstract communicating with labview
 classdef experiment < handle
-    properties
-        host
-        port
+    properties (Access = private)
         tcp
         commands
-        controls
+        controls         
+    end
+    properties (Hidden = true)
+        host
+        port  
+    end
+    properties
         com
         read
         write
-        dio64
-        dac
-        dac_tasks
-        dac_kick
-        scope
     end
-    methods
-        function obj = experiment()
-            obj.host = 'localhost';
-            obj.port = 8888;
-            obj.connect();
-        end
-        
-        function connect(obj)
-            try
-                obj.open();
-            catch
-                fprintf('Error: no labview interface running on %s:%d\n',obj.host,obj.port);
-            end
-            obj.get_commands();
-            obj.get_documentation();
-            obj.get_controls();
-        end
-        
-        function delete(obj)
-            fclose(obj.tcp);
-        end
-        
-        function open(obj)
-            obj.tcp = tcpip(obj.host,obj.port);
-            % Set the input and output buffers to be pretty large. This
-            % reduces communication overhead and doesn't seem to use up too
-            % much memory.
-            obj.tcp.InputBufferSize = 2^24;
-            obj.tcp.OutputBufferSize = 2^24;
-        end
-        
+    methods (Access = private)
         function send(obj,msg)
             % appends a 4 byte message length before sending messages, so
             % labview knows how much data to expect.
@@ -128,6 +97,38 @@ classdef experiment < handle
                 obj.read.(matlab.lang.makeValidName(controls{i})) = mfunction(@(varargin) read_control(obj,controls{i}));
                 obj.write.(matlab.lang.makeValidName(controls{i})) = mfunction(@(new_value) write_control(obj,controls{i},new_value));                
             end
+        end        
+    end
+    methods (Hidden = true)
+        function obj = experiment()
+            obj.host = 'localhost';
+            obj.port = 8888;
+            obj.connect();
+        end
+        
+        function connect(obj)
+            obj.open();
+            obj.get_commands();
+            obj.get_documentation();
+            obj.get_controls();
+        end
+        
+        function delete(obj)
+            fclose(obj.tcp);
+        end
+        
+        function open(obj)
+            try
+                obj.tcp = tcpip(obj.host,obj.port);
+            catch
+                fprintf('Error: no labview interface running on %s:%d\n',obj.host,obj.port);
+                return;
+            end            
+            % Set the input and output buffers to be pretty large. This
+            % reduces communication overhead and doesn't seem to use up too
+            % much memory.
+            obj.tcp.InputBufferSize = 2^16;
+            obj.tcp.OutputBufferSize = 2^16;
         end
         
         function header = read_type(obj,control)
@@ -141,24 +142,47 @@ classdef experiment < handle
             end
         end
         
+        function display(obj)
+            fprintf('    <strong>Controls</strong>');
+            fprintf(repmat(' ',1,38));
+            fprintf('<strong>Commands</strong>\n');
+
+            for i=1:max(length(obj.controls),length(obj.commands))
+                fprintf('    ');
+                if i<=length(obj.controls)
+                    fprintf(obj.controls{i});
+                    fprintf(repmat(' ',1,46-length(obj.controls{i})));
+                else
+                    fprintf(repmat(' ',1,46));
+                end
+                if i<=length(obj.commands)
+                    fprintf(obj.commands{i});
+                end
+                fprintf('\n');
+            end
+            fprintf('<strong>TCP Status</strong>\n');
+            fprintf('Connected to %s:%d\n',obj.tcp.RemoteHost,obj.tcp.RemotePort);
+        end
+    end
+    methods
         function [x,type_header] = read_control(obj,control)
             if ismember(control,obj.controls)
                 header = obj.read_type(control);
-                fopen(obj.tcp);
+                fopen(obj.tcp);                
                 obj.send('read');
                 obj.send(control);                
                 dim = fread(obj.tcp,1,'uint32');
-%                 data = [];
-%                 while dim
-%                     data = [data; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
-%                     dim  = dim - min(dim,obj.tcp.InputBufferSize);
-%                 end
-                data = fread(obj.tcp,dim,'uint8');
+                data = [];                
+                while dim
+                    data = [data; fread(obj.tcp,min(dim,obj.tcp.InputBufferSize),'uint8')];
+                    dim  = dim - min(dim,obj.tcp.InputBufferSize);
+                end
+%                 data = fread(obj.tcp,dim,'uint8');
                 fclose(obj.tcp);
                 data = uint8(data');
                 [x,type_header] = parse_binary(header,data);
                 x = struct2cell(x);
-                x = x{1};
+                x = x{1}; 
             end
         end  
         
@@ -182,57 +206,6 @@ classdef experiment < handle
             obj.send('sync')
             x = fread(obj.tcp,1,'uint8');
             fclose(obj.tcp);
-        end
-        
-        function read_dio64(obj)
-            obj.dio64 = struct2table(obj.read_control('dio64'));
-            for i=1:size(obj.dio64,1)
-                obj.dio64.Chops{i} = obj.dio64.Chops{i}';
-            end
-        end 
-        
-        function write_dio64(obj)
-            obj.write_control('dio64',table2struct(obj.dio64))
-        end
-        
-        function read_dac(obj)
-            obj.dac = struct2table(obj.read_control('dac'));
-            for i=1:size(obj.dac,1)
-                obj.dac.Chops{i} = obj.dac.Chops{i}';
-            end
-        end 
-        
-        function write_dac(obj)
-            obj.write_control('dac',table2struct(obj.dac));
-        end
-        
-        function read_dac_tasks(obj)
-            obj.dac_tasks = struct2table(obj.read_control('dac:tasks'));
-        end 
-        
-        function write_dac_tasks(obj)
-            obj.write_control('dac:tasks',table2struct(obj.dac_tasks));
-        end
-        
-        function read_dac_kick(obj)
-            obj.dac_kick = struct2table(obj.read_control('dac:kick'));
-        end 
-        
-        function write_dac_kick(obj)
-            obj.write_control('dac:kick',table2struct(obj.dac_kick));
-        end
-        
-        function read_scope(obj)
-            waveform = obj.read_control('scope');
-            obj.scope = table;
-            if ~isempty(waveform)
-                dt = waveform{1}.dt;
-                obj.scope.x = (0:length(waveform{1}.Y)-1)'*dt;
-                for i=1:numel(waveform)
-                    obj.scope.(strcat('y',num2str(i))) = waveform{i}.Y;
-                end
-            end
-        end           
-             
+        end    
     end
 end

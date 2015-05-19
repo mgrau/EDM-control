@@ -134,13 +134,29 @@ function [ptr,data,type_array,names] = read_array(str,ptr,type_array,names)
     % Now read in the size of each dimension of the array.
     dim = double(swapbytes(typecast(str(ptr:ptr+4*N-1),'uint32')));
     ptr = ptr + 4*N;
-
-    % Pop the type of the array and the variable name off of the queue.
-    current_type = type_array(1);
-    type_array = type_array(2:end);
-    names = names(2:end);
     
-    if dim>0
+    if dim==0
+        m=1;
+        while m>0
+            current_type = type_array(1);
+            type_array = type_array(2:end);                
+            names = names(2:end);            
+            if current_type==80
+                m = m + type_array(1);
+                type_array = type_array(2:end);
+            elseif current_type == 64
+                m = m + 1;
+                type_array = type_array(2:end);   
+            end
+            m = m - 1;
+        end
+        data = [];
+    else
+        % Pop the type of the array and the variable name off of the queue.
+        current_type = type_array(1);
+        type_array = type_array(2:end);
+        names = names(2:end);
+
         if length(dim)==1
             dim = [dim 1];
         end
@@ -171,8 +187,6 @@ function [ptr,data,type_array,names] = read_array(str,ptr,type_array,names)
             data = reshape(data,fliplr(dim));
         end
         data = transpose(data);
-    else
-        data = [];
     end
 end
 
